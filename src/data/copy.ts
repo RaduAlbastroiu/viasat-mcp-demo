@@ -1,0 +1,20 @@
+/** Visible description copy taken verbatim from the design. Replace here when product copy is final. */
+export const copy = {
+  maintenance: 'Scheduled maintenance Sun 17 Aug, 02:00–04:00 UTC — ordering briefly unavailable; in-progress orders are safe.',
+  maintenanceLink: 'Read the release notes',
+  contactsDescription: 'TMF632 Individual + contactMedium; the delivered contactType enum is commercial/technical/billing (Shipping and Emergency are gaps). Named people are illustrative.',
+  agreementsDescription: 'TMF651-shaped commercial contracts — representative: no TMF651 Agreement spec is in the delivered NB-NTN v1.0.0 set; renewal status is date-derived.',
+  groupsDescription: 'SCAP groups joined from TMF637 with roll-ups derived from the shared store; the per-group OOB rate is a representative assignment of real exported rate values.',
+  devicesDescription: 'TMF637 Product Inventory read from the one shared store; per-service usage figures are representative — the field shapes are real in the delivered contract.',
+  casesDescription: 'Representative: no TMF621 Trouble Ticket spec is in the delivered NB-NTN set — the ticket shape is real, the case data is illustrative.',
+  notificationsDescription: 'Representative: assembled from the shared store, not a live event stream — each event links by id to the record it names.',
+  quoteSubtitle: 'Pre-order pricing proposal (TMF648). Line items use the same offering codes the product catalogue and invoices show — no price drift across the hub.',
+  quoteFootnote: 'Quote entity modelled as TMF648 representative — see evidence footer for provenance.',
+  invoicesDescription: 'TMF678-shaped CustomerBill — no TMF678 bill endpoint in the delivered NB-NTN spec, so figures are representative; the shape and unit prices are real.',
+  recentCasesDescription: 'A support case (Trouble Ticket shape) — representative, no TMF621 spec committed. Click a case to open its full detail.',
+  groupDevicesDescription: 'TMF637 Product Inventory joined to this group; per-device figures are representative — the field shapes are real.',
+  certifiedDevicesDescription: 'The device models certified to run on this product. The certified list is supplied by the OEM — one entry here is read from the catalogue export; the rest are representative, labelled below.',
+  dataAllowanceNote: 'Field defined in the delivered rate-plan schema (ProductOfferingPrice.udpDataAllowanceMb); the delivered export carries no value.',
+  fairUsageNote: 'Not carried by the delivered NB-NTN contract.',
+  slaNote: 'Not carried by the delivered NB-NTN contract.',
+}
