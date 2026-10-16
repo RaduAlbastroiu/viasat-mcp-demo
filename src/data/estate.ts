@@ -1,4 +1,5 @@
 import type { Account, Customer, Device, Group, RatePlan, Site } from './types'
+import { fleetAccount, fleetDevices, fleetGroups, fleetPlans, fleetSites } from './fleet'
 
 export const customers: Customer[] = [
   {
@@ -197,6 +198,7 @@ export const seedDevices: Device[] = [
     ],
     alarm: { title: 'Connectivity alarm — Buoy sensor 001', tone: 'warning', caption: '2026-07-21 · Intermittent signal degradation reported by the network (TMF639 resource alarm, minor).' },
     connection: 'Online', availability: 'Degraded', bearerAvailability: '99.1%', latency: '440 ms', orderId: 'ord-5003',
+    connectivity: 'degraded', lastSeenMinutesAgo: 22, activationDate: '2026-06-19',
   },
   {
     id: 'dev-002', label: 'Buoy sensor 002', accountId: 'cus-bsnl-marine', groupId: 'grp-001', planId: 'plan-002', siteId: 'SITE-D2D-005',
@@ -207,9 +209,17 @@ export const seedDevices: Device[] = [
       { label: 'SMS', used: 41, allowance: 200, unit: 'msgs', tone: 'blue' },
     ],
     alarm: { title: 'Loss of connectivity — Buoy sensor 002', tone: 'negative', caption: '2026-07-22 · No heartbeat received in the last reporting window (resource alarm, critical).' },
-    connection: 'Online', availability: 'Available', bearerAvailability: '99.6%', latency: '410 ms', orderId: 'ord-5004',
+    connection: 'Offline', availability: 'Degraded', bearerAvailability: '0%', latency: '—', orderId: 'ord-5004',
+    connectivity: 'offline', lastSeenMinutesAgo: 95, activationDate: '2026-06-20',
   },
 ]
+
+// The 100-device NB-NTN IoT pilot fleet (install-base-devices.json) joins the estate as a third BSNL India account.
+accounts.push(fleetAccount)
+groups.push(...fleetGroups)
+ratePlans.push(...fleetPlans)
+sites.push(...fleetSites)
+seedDevices.push(...fleetDevices)
 
 export const customerById = (id: string) => customers.find((c) => c.id === id)
 export const accountById = (id: string) => accounts.find((a) => a.id === id)

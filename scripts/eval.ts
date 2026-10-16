@@ -20,6 +20,8 @@ const cases: { prompt: string; expect: string[] }[] = [
   { prompt: "What's the status of my install base right now?", expect: ['get_install_base', 'get_attention_summary'] },
   { prompt: 'Explain the latest breaking change in the ordering API', expect: ['get_api_spec', 'search_library', 'get_catalogue_index'] },
   { prompt: 'Give me a link to open device Buoy sensor 002 in the app', expect: ['get_app_link', 'get_device'] },
+  { prompt: 'Which devices stopped responding in the last hour? Create a ticket for each one that has none.', expect: ['create_ticket'] },
+  { prompt: 'Give me the fleet health summary: how many devices are connected, degraded and offline, and which site is highest risk?', expect: ['get_fleet_health'] },
 ]
 
 const SYSTEM = 'You are an assistant for Viasat Business Hub users. Answer from the MCP tools only; keep answers short and cite record ids and open-in-app links.'

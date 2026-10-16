@@ -69,9 +69,13 @@ export interface Site {
   status: 'Active' | 'Pending' | 'Decommissioned'
   mapX?: number
   mapY?: number
+  city?: string
 }
 
 export type DeviceStatus = 'Active' | 'Suspended' | 'Terminated' | 'Barred' | 'Provisioning'
+
+/** Reported connectivity tier. Fleet rows carry it; older records derive it — see data/fleet.ts deviceConnectivity(). */
+export type Connectivity = 'connected' | 'degraded' | 'offline'
 
 export interface Device {
   id: string
@@ -100,6 +104,11 @@ export interface Device {
   bearerAvailability: string
   latency: string
   orderId: string
+  /** Fleet (install-base-devices.json) fields */
+  connectivity?: Connectivity
+  lastSeenMinutesAgo?: number
+  activationDate?: string
+  productSpecification?: string
 }
 
 export interface Agreement {
@@ -191,6 +200,10 @@ export interface Case {
   planEnquired?: KV[]
   requestedBy?: KV[]
   relatedMonitoring?: string
+  /** Set on tickets created by the fleet monitor (MCP) */
+  deviceId?: string
+  source?: 'monitor' | 'user'
+  createdAt?: string
 }
 
 export type NotificationType = 'Order notes' | 'Offer' | 'Contract' | 'Support' | 'At risk' | 'Order status' | 'Alarm' | 'Resource'

@@ -1,6 +1,6 @@
 /** Persona → tools exposed. Mirrors the per-profile gating in the JTBD document; "internal" sees everything. */
 const readOnlyLibrary = ['get_catalogue_index', 'search_library', 'get_api_spec', 'get_document', 'get_news', 'get_app_link']
-const installBase = ['get_install_base', 'get_device', 'get_attention_summary']
+const installBase = ['get_install_base', 'get_device', 'get_attention_summary', 'list_devices', 'detect_stale_devices', 'get_fleet_health', 'create_ticket', 'list_tickets', 'resolve_ticket']
 const commercial = ['list_orders', 'get_order', 'get_agreement', 'get_contacts', 'get_support_contact', 'compare_plans']
 
 export const personaTools: Record<string, 'all' | string[]> = {

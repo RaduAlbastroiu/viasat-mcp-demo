@@ -4,6 +4,8 @@
  */
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
+import { connectivityNow, lastSeenAt, minutesAgo } from '../fleet-sim'
 import { PERSONA } from '../config'
 import { allowsTool } from '../persona'
 import { state } from '../store'
@@ -18,13 +20,16 @@ export interface ToolResult {
   data: Record<string, unknown>
 }
 
-export interface ReadTool {
+export interface ToolDef {
   name: string
   title: string
   description: string
   input: z.ZodRawShape
+  /** Defaults to read-only + idempotent */
+  annotations?: ToolAnnotations
   run: (args: Record<string, any>) => ToolResult
 }
+export type ReadTool = ToolDef
 
 const text = (...parts: Array<string | undefined>) => parts.filter(Boolean).join(' ').toLowerCase()
 const score = (hay: string, q: string) => q.toLowerCase().split(/\s+/).filter(Boolean).reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0)
@@ -65,7 +70,10 @@ const deviceView = (d: Device) => ({
   alarm: d.alarm ? `${d.alarm.tone === 'negative' ? 'Critical' : 'Warning'} — ${d.alarm.title}` : null,
   connection: d.connection,
   availability: d.availability,
-  last_order: d.orderId,
+  connectivity: connectivityNow(d),
+  last_seen_at: lastSeenAt(d),
+  last_seen_minutes_ago: minutesAgo(d),
+  last_order: d.orderId || null,
   open_in_app: appLink('device', d.id),
 })
 
@@ -301,12 +309,12 @@ export const readTools: ReadTool[] = [
   },
 ]
 
-export function registerReadTools(server: McpServer) {
-  for (const t of readTools) {
+export function registerTools(server: McpServer, tools: ToolDef[]) {
+  for (const t of tools) {
     if (!allowsTool(PERSONA, t.name)) continue
     server.registerTool(
       t.name,
-      { title: t.title, description: t.description, inputSchema: t.input, annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false } },
+      { title: t.title, description: t.description, inputSchema: t.input, annotations: t.annotations ?? { readOnlyHint: true, idempotentHint: true, openWorldHint: false } },
       async (args) => {
         try {
           const { summary, data } = t.run((args ?? {}) as Record<string, any>)
@@ -318,3 +326,5 @@ export function registerReadTools(server: McpServer) {
     )
   }
 }
+
+export const registerReadTools = (server: McpServer) => registerTools(server, readTools)

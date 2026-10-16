@@ -15,16 +15,18 @@
     "sync-data": "tsx scripts/sync-data.ts",
     "smoke": "tsx scripts/smoke.ts",
     "eval": "tsx scripts/eval.ts",
-    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js --stdio"
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js --stdio",
+    "monitor": "node dist/monitor.js",
+    "monitor:dev": "tsx src/monitor.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.133.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.15.0",
