@@ -18,7 +18,7 @@ Environment (see `.env.example`):
 | `PORT` | `8080` | HTTP port. DigitalOcean sets it. |
 | `BUSINESS_HUB_URL` | `https://mcp-demo-app-o6moq.ondigitalocean.app` | Base URL used for `open_in_app` deep links. |
 | `FLEET_SIMULATION` / `FLEET_DRIFT` | `on` / `1` | Live-clock simulation for last-seen times (see Fleet monitoring demo). |
-| `MCP_URL`, `MONITOR_MODEL` | `http://localhost:8080/mcp`, `claude-opus-5-5` | Used by `npm run monitor` only. |
+| `MCP_URL`, `MONITOR_MODEL`, `MONITOR_INTERVAL`, `MONITOR_THRESHOLD` | `http://localhost:8080/mcp`, `claude-opus-5-5`, `3m`, `60` | Used by `npm run monitor` only. |
 | `MCP_PERSONA` | `internal` | Tool set to expose: `internal` (all), `integrator`, `operator`, `commercial`. |
 
 No API key is needed on the server itself: it only serves data. The model runs on the client side — including the `monitor` script, which is the only place `ANTHROPIC_API_KEY` is used.
@@ -57,20 +57,24 @@ with header `anthropic-beta: mcp-client-2025-11-20`.
 
 ## Fleet monitoring demo
 
-The use case: **get the Install Base device list → monitor every 15 minutes → detect devices whose last report exceeds a threshold → create a ticket**. The data holds a 100-device NB-NTN IoT pilot fleet (88 connected, 9 degraded reporting 16–40 min ago, 3 offline for 90–480 min: DEV-0051, DEV-0080, DEV-0092) plus the two buoy sensors.
+The use case: **get the Install Base device list → monitor every 3 minutes → detect devices whose last report exceeds a threshold → create a ticket**. The data holds a 100-device NB-NTN IoT pilot fleet (88 connected, 9 degraded reporting 16–40 min ago, 3 offline for 90–480 min: DEV-0051, DEV-0080, DEV-0092) plus the two buoy sensors.
 
 ```bash
 npm run monitor -- --once                    # one pass against MCP_URL (default http://localhost:8080/mcp)
-npm run monitor                              # every 15 minutes
+npm run monitor                              # run now, then at every wall-clock multiple of 3 min (18:00, 18:03, 18:06 …)
+npm run monitor -- --interval 15m            # :00, :15, :30, :45
+npm run monitor -- --wait                    # don't run immediately; wait for the next boundary
 npm run monitor -- --interval 1m --threshold 30   # quick demo: 7 stale devices on the first poll
 MCP_URL=https://<host>/mcp npm run monitor -- --connector   # let the Messages API call the MCP server itself (public URL)
 ```
+
+Runs are clock-aligned (`--no-align` for plain "every N minutes from start"). If you prefer the OS scheduler instead of a long-running process, the equivalent crontab line is `*/3 * * * * cd /path/to/business-hub-mcp && MCP_URL=https://<host>/mcp npm run monitor -- --once >> monitor.log 2>&1`.
 
 Each run asks Claude (needs `ANTHROPIC_API_KEY`) to follow the runbook in `src/runbook.ts`: `detect_stale_devices(threshold)` → `create_ticket` once per stale device without an open ticket → short summary. `create_ticket` is idempotent per device, so repeated polls never duplicate tickets. Tickets are in-memory on the server (`list_tickets`, `GET /api/tickets`, and the Business Hub Home dashboard shows them); `reset_demo_data` clears them.
 
 Time simulation (`FLEET_SIMULATION`, default on): connected devices keep reporting; degraded and offline devices drift by `FLEET_DRIFT` minutes per real minute (default 1), so later polls catch devices crossing the threshold. Set `FLEET_SIMULATION=off` for static values.
 
-Alternatives for the 15-minute schedule: Claude Code (`claude mcp add --transport http business-hub https://<host>/mcp`, then `/loop 15m` with the runbook prompt), or a Claude Managed Agents scheduled deployment (`*/15 * * * *`) with the MCP server attached and the runbook as system prompt.
+Alternatives for the schedule: Claude Code (`claude mcp add --transport http business-hub https://<host>/mcp`, then `/loop 3m` with the runbook prompt), or a Claude Managed Agents scheduled deployment (`*/3 * * * *`) with the MCP server attached and the runbook as system prompt.
 
 ## What the server exposes
 
@@ -143,6 +147,6 @@ src/
   tools/fleet.ts  fleet monitoring tools (+ the ticket store)
   fleet-sim.ts    live-clock simulation of last-seen times
   runbook.ts      the monitoring runbook prompt
-  monitor.ts      the 15-minute monitor (Messages API + MCP)
+  monitor.ts      the clock-aligned monitor (Messages API + MCP), default every 3 min
 scripts/          sync-data, smoke, eval
 ```

@@ -3,11 +3,15 @@
  * (list → detect stale devices → create tickets) and logs the outcome.
  *
  *   npm run monitor -- --once                       one pass, default threshold 60 min
- *   npm run monitor -- --interval 15m               poll every 15 minutes (default)
+ *   npm run monitor                                 run now, then at every wall-clock multiple of 3 minutes (18:00, 18:03, 18:06, …)
+ *   npm run monitor -- --interval 15m               poll every 15 minutes (aligned: :00, :15, :30, :45)
  *   npm run monitor -- --interval 1m --threshold 30 quick demo
+ *   npm run monitor -- --wait                       skip the immediate run; start at the next boundary
+ *   npm run monitor -- --no-align                   plain "every N minutes from start" instead of clock-aligned
  *   npm run monitor -- --connector                  use the Messages API MCP connector (server-side tool calls; the
  *                                                   MCP URL must be publicly reachable) instead of the local MCP client
- * Env: ANTHROPIC_API_KEY (or an `ant auth login` profile), MCP_URL (default http://localhost:$PORT/mcp), MONITOR_MODEL.
+ * Env: ANTHROPIC_API_KEY (or an `ant auth login` profile), MCP_URL (default http://localhost:$PORT/mcp), MONITOR_MODEL,
+ *      MONITOR_INTERVAL (default 3m), MONITOR_THRESHOLD (default 60).
  */
 import Anthropic from '@anthropic-ai/sdk'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -29,13 +33,17 @@ const parseInterval = (s: string) => {
 
 const MCP_URL = opt('mcp', process.env.MCP_URL ?? `http://localhost:${process.env.PORT ?? 8080}/mcp`)
 const MODEL = opt('model', process.env.MONITOR_MODEL ?? 'claude-opus-5-5')
-const THRESHOLD = Number(opt('threshold', String(DEFAULT_THRESHOLD_MIN)))
-const INTERVAL = parseInterval(opt('interval', '15m'))
+const THRESHOLD = Number(opt('threshold', process.env.MONITOR_THRESHOLD ?? String(DEFAULT_THRESHOLD_MIN)))
+const INTERVAL = parseInterval(opt('interval', process.env.MONITOR_INTERVAL ?? '3m'))
 const ONCE = flag('once')
 const CONNECTOR = flag('connector')
+const ALIGN = !flag('no-align')
+const WAIT = flag('wait')
 
 const claude = new Anthropic()
-const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
+const pad = (n: number) => String(n).padStart(2, '0')
+const fmtLocal = (ms = Date.now()) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` }
+const ts = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${fmtLocal(d.getTime())}` }
 let runNo = 0
 
 type RunResult = { tools: string[]; text: string; seconds: number }
@@ -122,11 +130,33 @@ async function runOnce() {
   }
 }
 
+/** Milliseconds until the next wall-clock multiple of INTERVAL (e.g. 18:00, 18:03, 18:06 for 3m). */
+const msToNextBoundary = () => {
+  const now = Date.now()
+  return Math.ceil((now + 1) / INTERVAL) * INTERVAL - now
+}
+
+function scheduleAligned() {
+  const delay = msToNextBoundary()
+  console.log(`[${ts()}] next run at ${fmtLocal(Date.now() + delay)} (every ${INTERVAL / 60_000} min, clock-aligned; Ctrl-C to stop)`)
+  setTimeout(async () => {
+    await runOnce()
+    scheduleAligned()
+  }, delay)
+}
+
 async function main() {
-  await runOnce()
-  if (ONCE) return
-  console.log(`[${ts()}] next run in ${INTERVAL / 60_000} min (Ctrl-C to stop)`)
-  setInterval(() => void runOnce(), INTERVAL)
+  if (ONCE) {
+    await runOnce()
+    return
+  }
+  if (!WAIT) await runOnce()
+  if (ALIGN) {
+    scheduleAligned()
+  } else {
+    console.log(`[${ts()}] next run in ${INTERVAL / 60_000} min (Ctrl-C to stop)`)
+    setInterval(() => void runOnce(), INTERVAL)
+  }
 }
 
 main().catch((e) => {
