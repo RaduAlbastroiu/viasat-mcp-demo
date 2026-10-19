@@ -1,6 +1,7 @@
 /**
  * Fleet monitor: every N minutes, asks Claude to run the monitoring runbook against this MCP server
- * (list → detect stale devices → create tickets) and logs the outcome.
+ * (list → detect stale devices → create tickets → resolve tickets of devices that report again) and logs the outcome.
+ * The server records every tool call: GET <server>/api/monitor shows the last check and how many ran in the last 24 h.
  *
  *   npm run monitor -- --once                       one pass, default threshold 60 min
  *   npm run monitor                                 run now, then at every wall-clock multiple of 3 minutes (18:00, 18:03, 18:06, …)
@@ -55,7 +56,7 @@ async function runBridge(): Promise<RunResult> {
   await mcp.connect(new StreamableHTTPClientTransport(new URL(MCP_URL)))
   try {
     const listed = await mcp.listTools()
-    const wanted = new Set(['list_devices', 'detect_stale_devices', 'create_ticket', 'list_tickets', 'get_fleet_health'])
+    const wanted = new Set(['list_devices', 'detect_stale_devices', 'create_ticket', 'resolve_ticket', 'list_tickets', 'get_fleet_health'])
     const tools: Anthropic.Tool[] = listed.tools.filter((t) => wanted.has(t.name)).map((t) => ({ name: t.name, description: t.description ?? '', input_schema: t.inputSchema as Anthropic.Tool['input_schema'] }))
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: runbookPrompt(THRESHOLD) }]
     const used: string[] = []

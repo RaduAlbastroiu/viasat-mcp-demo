@@ -9,6 +9,7 @@ import { connectivityNow, lastSeenAt, minutesAgo } from '../fleet-sim'
 import { PERSONA } from '../config'
 import { allowsTool } from '../persona'
 import { state } from '../store'
+import { recordCall } from '../activity'
 import { appLink, LINK_KINDS } from './links'
 import { ACTIVATION_FEE, BASE_SERVICE, INSTALL_FEE, SUSPENSION_FEE, apiSpecs, breakingChanges, certifiedDevices, dataPlans, docById, guideById, guides, libraryDocs, newsItems, productById, products, smsPlans, specById } from '../data/catalog'
 import { accountById, accounts, customerById, customers, groupById, groups, planById, siteById, sites } from '../data/estate'
@@ -309,7 +310,7 @@ export const readTools: ReadTool[] = [
   },
 ]
 
-export function registerTools(server: McpServer, tools: ToolDef[]) {
+export function registerTools(server: McpServer, tools: ToolDef[], client = 'unknown') {
   for (const t of tools) {
     if (!allowsTool(PERSONA, t.name)) continue
     server.registerTool(
@@ -318,9 +319,12 @@ export function registerTools(server: McpServer, tools: ToolDef[]) {
       async (args) => {
         try {
           const { summary, data } = t.run((args ?? {}) as Record<string, any>)
+          recordCall({ tool: t.name, client, ok: true, summary, created: t.name === 'create_ticket' && data.created === true, resolved: t.name === 'resolve_ticket' && data.resolved === true })
           return { content: [{ type: 'text', text: `${summary}\n${JSON.stringify(data, null, 2)}` }], structuredContent: data }
         } catch (e) {
-          return { content: [{ type: 'text', text: `Error: ${e instanceof Error ? e.message : String(e)}` }], isError: true }
+          const message = e instanceof Error ? e.message : String(e)
+          recordCall({ tool: t.name, client, ok: false, summary: message })
+          return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true }
         }
       },
     )

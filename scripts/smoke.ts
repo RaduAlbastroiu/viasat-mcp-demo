@@ -30,6 +30,7 @@ const calls: [string, Record<string, unknown>][] = [
   ['create_ticket', { device_id: 'DEV-0051' }],
   ['create_ticket', { device_id: 'DEV-0051' }], // idempotent: created=false
   ['list_tickets', {}],
+  ['get_monitor_status', {}],
   ['resolve_ticket', { ticket_id: 'INC-D2D-4500' }],
   ['reset_demo_data', {}],
   ['get_order', { order_id: 'nope' }], // expected error

@@ -5,7 +5,8 @@
 import { z } from 'zod'
 import type { ToolDef } from './read'
 import { monitorTickets, resetDemo, state } from '../store'
-import { DEFAULT_THRESHOLD_MIN, DEGRADED_AFTER_MIN, SIMULATION, connectivityNow, lastSeenAt, minutesAgo, resetSimulation } from '../fleet-sim'
+import { DEFAULT_THRESHOLD_MIN, DEGRADED_AFTER_MIN, SIMULATION, connectivityNow, currentIncident, lastSeenAt, minutesAgo, resetSimulation } from '../fleet-sim'
+import { monitorStatus } from '../activity'
 import { appLink } from './links'
 import { accountById, groupById, siteById } from '../data/estate'
 import type { Case, Connectivity, Device } from '../data/types'
@@ -94,15 +95,22 @@ export function detectStale(threshold: number, includeDegraded: boolean, now = D
         .sort((a, b) => b.m - a.m)
         .map((x) => ({ ...deviceSummary(x.d, now, threshold), tier: 'watch' as const }))
     : []
+  // Devices that report again but still carry an open monitor ticket → the runbook resolves those.
+  const recovered = rows
+    .filter((x) => x.m < DEGRADED_AFTER_MIN && openTicketFor(x.d.id))
+    .map((x) => ({ ...deviceSummary(x.d, now, threshold), tier: 'recovered' as const }))
   return {
     threshold_minutes: threshold,
     degraded_after_minutes: DEGRADED_AFTER_MIN,
     checked: rows.length,
     stale,
     watch,
+    recovered,
     already_ticketed: stale.filter((s) => s.open_ticket).length,
     needing_ticket: stale.filter((s) => !s.open_ticket).map((s) => s.id),
+    needing_resolve: recovered.map((r) => ({ device_id: r.id, ticket_id: r.open_ticket })),
     simulation: SIMULATION,
+    incident: currentIncident(now),
     checked_at: new Date(now).toISOString(),
   }
 }
@@ -118,10 +126,15 @@ export function fleetHealth(accountId?: string, now = Date.now(), threshold = DE
       .map(([name, list]) => ({ name, total: list.length, connected: count('connected', list), degraded: count('degraded', list), offline: count('offline', list) }))
       .sort((a, b) => b.offline + b.degraded - (a.offline + a.degraded) || b.total - a.total)
   }
-  const attention = rows
-    .filter((r) => r.c !== 'connected')
-    .sort((a, b) => (a.c === b.c ? (b.m ?? 0) - (a.m ?? 0) : a.c === 'offline' ? -1 : 1))
-    .map((r) => ({ ...deviceSummary(r.d, now, threshold), suggested_action: r.c === 'offline' ? (openTicketFor(r.d.id) ? `Ticket ${openTicketFor(r.d.id)!.id} open` : 'Raise ticket now') : r.d.usagePct > 100 ? 'Watch · over allowance' : 'Watch' }))
+  const attention = [
+    ...rows
+      .filter((r) => r.c !== 'connected')
+      .sort((a, b) => (a.c === b.c ? (b.m ?? 0) - (a.m ?? 0) : a.c === 'offline' ? -1 : 1))
+      .map((r) => ({ ...deviceSummary(r.d, now, threshold), suggested_action: r.c === 'offline' ? (openTicketFor(r.d.id) ? `Ticket ${openTicketFor(r.d.id)!.id} open` : 'Raise ticket now') : r.d.usagePct > 100 ? 'Watch · over allowance' : 'Watch' })),
+    ...rows
+      .filter((r) => r.c === 'connected' && r.m !== null && openTicketFor(r.d.id))
+      .map((r) => ({ ...deviceSummary(r.d, now, threshold), suggested_action: `Reporting again · resolve ${openTicketFor(r.d.id)!.id}` })),
+  ]
   const total = rows.length
   const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0)
   const byType = groupBy((d) => d.model)
@@ -140,6 +153,8 @@ export function fleetHealth(accountId?: string, now = Date.now(), threshold = DE
       .filter((t) => t.status !== 'Resolved')
       .map(ticketView),
     simulation: SIMULATION,
+    incident: currentIncident(now),
+    monitor: (({ recent_calls: _r, ...rest }) => rest)(monitorStatus(now, 0)),
   }
 }
 
@@ -225,14 +240,14 @@ export const fleetTools: ToolDef[] = [
   {
     name: 'detect_stale_devices',
     title: 'Detect devices that stopped responding',
-    description: `Step 3 of the runbook: devices whose last report is older than threshold_minutes (default ${DEFAULT_THRESHOLD_MIN}), most stale first, each with a suggested ticket severity and whether an open ticket already exists. With include_degraded, also returns the "watch" tier (reported ${DEGRADED_AFTER_MIN}–threshold minutes ago).`,
+    description: `Step 3 of the runbook: devices whose last report is older than threshold_minutes (default ${DEFAULT_THRESHOLD_MIN}), most stale first, each with a suggested ticket severity and whether an open ticket already exists. With include_degraded, also returns the "watch" tier (reported ${DEGRADED_AFTER_MIN}–threshold minutes ago). Also lists "recovered" devices: reporting again but still carrying an open ticket, which should be resolved with resolve_ticket.`,
     input: {
       threshold_minutes: z.number().int().positive().optional().describe(`Default ${DEFAULT_THRESHOLD_MIN}`),
       include_degraded: z.boolean().optional().describe('Default true'),
     },
     run: (a) => {
       const r = detectStale(a.threshold_minutes ?? DEFAULT_THRESHOLD_MIN, a.include_degraded ?? true)
-      return { summary: `${r.stale.length} device${r.stale.length === 1 ? '' : 's'} exceed ${r.threshold_minutes} min (${r.already_ticketed} already ticketed); ${r.watch.length} degraded to watch.`, data: r }
+      return { summary: `${r.stale.length} device${r.stale.length === 1 ? '' : 's'} exceed ${r.threshold_minutes} min (${r.already_ticketed} already ticketed, ${r.needing_ticket.length} need a ticket); ${r.watch.length} degraded to watch; ${r.recovered.length} reporting again with an open ticket to resolve.`, data: r }
     },
   },
   {
@@ -280,6 +295,16 @@ export const fleetTools: ToolDef[] = [
     run: (a) => {
       const r = resolveTicket(String(a.ticket_id), a.note)
       return { summary: r.resolved ? `Resolved ${r.ticket.id}.` : `${r.ticket.id} was already resolved.`, data: r }
+    },
+  },
+  {
+    name: 'get_monitor_status',
+    title: 'Monitor heartbeat',
+    description: 'Is the monitoring cron still running? When the last check (detect_stale_devices / list_devices / get_fleet_health) hit this server and from which client, checks in the last hour and 24 h, tickets created and resolved since the server started, the current simulated incident, and the last tool calls. status is active / silent / never.',
+    input: {},
+    run: () => {
+      const s = monitorStatus(Date.now(), 25)
+      return { summary: s.status_hint, data: { ...s, incident: currentIncident() } }
     },
   },
   {

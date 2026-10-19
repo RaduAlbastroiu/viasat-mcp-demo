@@ -6,7 +6,7 @@ import { BUSINESS_HUB_URL, PERSONA, PORT, SERVER_NAME, SERVER_VERSION } from './
 async function main() {
   if (process.argv.includes('--stdio')) {
     // stdout is the protocol channel in stdio mode — log to stderr only.
-    const server = createServer()
+    const server = createServer('stdio')
     await server.connect(new StdioServerTransport())
     console.error(`${SERVER_NAME} ${SERVER_VERSION} ready on stdio (persona: ${PERSONA})`)
     return

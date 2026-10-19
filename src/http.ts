@@ -6,6 +6,10 @@ import { BUSINESS_HUB_URL, PERSONA, SERVER_NAME, SERVER_VERSION } from './config
 import { readTools } from './tools/read'
 import { fleetHealth, fleetTools, listDevices, listTickets } from './tools/fleet'
 import { allowsTool } from './persona'
+import { monitorStatus, monitorSummary } from './activity'
+import { currentIncident } from './fleet-sim'
+
+const clientLabel = (req: Request) => String(req.headers['user-agent'] ?? 'unknown').slice(0, 120)
 
 export function createApp() {
   const app = express()
@@ -25,7 +29,7 @@ export function createApp() {
     mcp_endpoint: '/mcp',
     transport: 'streamable-http (stateless)',
     tools: [...readTools, ...fleetTools].filter((t) => allowsTool(PERSONA, t.name)).map((t) => t.name),
-    rest_api: ['/api/fleet', '/api/devices', '/api/tickets'],
+    rest_api: ['/api/fleet', '/api/devices', '/api/tickets', '/api/monitor'],
     business_hub_url: BUSINESS_HUB_URL,
   })
 
@@ -33,7 +37,7 @@ export function createApp() {
     res.json({ ...describe(), hint: 'Point an MCP client at POST /mcp.' })
   })
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, ...describe() })
+    res.json({ ok: true, ...describe(), monitor: monitorSummary(), incident: currentIncident() })
   })
 
   // Plain JSON views of the same data, for the Business Hub dashboard and quick checks.
@@ -44,6 +48,10 @@ export function createApp() {
     const q = req.query as Record<string, string | undefined>
     res.json(listDevices({ connectivity: q.connectivity, status: q.status, group_id: q.group_id, site_id: q.site_id, account_id: q.account_id, query: q.query, limit: q.limit ? Number(q.limit) : undefined, offset: q.offset ? Number(q.offset) : undefined }))
   })
+  // Heartbeat: when did a monitor last check, how often, what did it do. Answers "is the cron still running?".
+  app.get('/api/monitor', (req, res) => {
+    res.json(monitorStatus(Date.now(), req.query.limit ? Number(req.query.limit) : 50))
+  })
   app.get('/api/tickets', (req, res) => {
     const q = req.query as Record<string, string | undefined>
     res.json(listTickets({ status: q.status ?? 'open', device_id: q.device_id, include_seed: q.include_seed === 'true' }))
@@ -51,7 +59,7 @@ export function createApp() {
 
   // Stateless Streamable HTTP: a fresh server + transport per request, nothing kept between calls.
   app.post('/mcp', async (req: Request, res: Response) => {
-    const server = createServer()
+    const server = createServer(clientLabel(req))
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
     res.on('close', () => {
       void transport.close()

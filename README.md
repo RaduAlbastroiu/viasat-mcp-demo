@@ -23,7 +23,7 @@ Environment (see `.env.example`):
 
 No API key is needed on the server itself: it only serves data. The model runs on the client side — including the `monitor` script, which is the only place `ANTHROPIC_API_KEY` is used.
 
-Endpoints: `POST /mcp` (Streamable HTTP, stateless), `GET /health`, `GET /`, `GET /api/fleet`, `GET /api/devices`, `GET /api/tickets`.
+Endpoints: `POST /mcp` (Streamable HTTP, stateless), `GET /health`, `GET /`, `GET /api/fleet`, `GET /api/devices`, `GET /api/tickets`, `GET /api/monitor` (heartbeat).
 
 ## Connect a client
 
@@ -70,9 +70,22 @@ MCP_URL=https://<host>/mcp npm run monitor -- --connector   # let the Messages A
 
 Runs are clock-aligned (`--no-align` for plain "every N minutes from start"). If you prefer the OS scheduler instead of a long-running process, the equivalent crontab line is `*/3 * * * * cd /path/to/business-hub-mcp && MCP_URL=https://<host>/mcp npm run monitor -- --once >> monitor.log 2>&1`.
 
-Each run asks Claude (needs `ANTHROPIC_API_KEY`) to follow the runbook in `src/runbook.ts`: `detect_stale_devices(threshold)` → `create_ticket` once per stale device without an open ticket → short summary. `create_ticket` is idempotent per device, so repeated polls never duplicate tickets. Tickets are in-memory on the server (`list_tickets`, `GET /api/tickets`, and the Business Hub Home dashboard shows them); `reset_demo_data` clears them.
+Each run asks Claude (needs `ANTHROPIC_API_KEY`) to follow the runbook in `src/runbook.ts`: `detect_stale_devices(threshold)` → `create_ticket` once per stale device without an open ticket → `resolve_ticket` for devices that report again → short summary. `create_ticket` is idempotent per device, so repeated polls never duplicate tickets. Tickets are in-memory on the server (`list_tickets`, `GET /api/tickets`, and the Business Hub Home dashboard shows them); `reset_demo_data` clears them.
+
+### Is the cron still running?
+
+Once every silent device has a ticket, a healthy run creates nothing — so "no new tickets" does not mean the monitor died. The server records every tool call it receives:
+
+```bash
+curl https://<host>/api/monitor            # status active|silent|never, last check time + client, checks in last hour/24 h, tickets created/resolved, last 50 calls
+curl https://<host>/health                 # same summary under "monitor", plus the current simulated incident
+```
+
+The same data is the `get_monitor_status` tool (ask any connected agent "is the monitor still running?") and the heartbeat line in the Business Hub Home dashboard. `status` turns `silent` when no check arrived for `MONITOR_SILENT_AFTER_MIN` minutes (default 30). Every call is also one log line (`tool detect_stale_devices ← <user-agent> · …`), so on DigitalOcean the **Runtime Logs** tab shows the cron's activity. Note the log and the counters live in memory, like the tickets: a redeploy resets them.
 
 Time simulation (`FLEET_SIMULATION`, default on): connected devices keep reporting; degraded and offline devices drift by `FLEET_DRIFT` minutes per real minute (default 1), so later polls catch devices crossing the threshold. Set `FLEET_SIMULATION=off` for static values.
+
+Rolling incidents (`FLEET_INCIDENTS`, default on): in every `FLEET_INCIDENT_EVERY` window (default `2h`) one otherwise healthy device goes silent from the start of the window — degraded after 15 min, past the 60-min threshold after an hour — and reports again when the next window starts, at which point `detect_stale_devices` lists it under `recovered` and the runbook resolves its ticket. The device is picked by hashing the window number, so every server instance agrees and the schedule survives restarts. This is what keeps the demo producing new tickets (and resolutions) over a weekend instead of going quiet after the first day. Keep the window longer than the threshold, otherwise the device recovers before it can be ticketed; `/health` shows the current incident.
 
 Alternatives for the schedule: Claude Code (`claude mcp add --transport http business-hub https://<host>/mcp`, then `/loop 3m` with the runbook prompt), or a Claude Managed Agents scheduled deployment (`*/3 * * * *`) with the MCP server attached and the runbook as system prompt.
 
@@ -86,10 +99,11 @@ Fleet tools:
 | `detect_stale_devices(threshold_minutes = 60, include_degraded = true)` | Devices past the threshold (most stale first, suggested severity, existing ticket) plus the "watch" tier. |
 | `create_ticket(device_id, severity?, title?, description?)` | **Write.** Incident ticket for a device; returns the existing open ticket instead of duplicating. |
 | `list_tickets(status?, device_id?, include_seed?)` / `resolve_ticket(ticket_id, note?)` | Tickets raised through the server; resolve one. |
+| `get_monitor_status()` | Heartbeat: last check time and client, checks in the last hour / 24 h, tickets created and resolved, recent tool calls. |
 | `get_fleet_health(account_id?)` | Dashboard numbers: totals, by type, by site, attention list, open tickets. |
 | `reset_demo_data()` | Clears tickets and restarts the simulation. |
 
-REST views of the same data (for the dashboard and quick checks): `GET /api/fleet`, `GET /api/devices?connectivity=offline`, `GET /api/tickets?status=open`.
+REST views of the same data (for the dashboard and quick checks): `GET /api/fleet`, `GET /api/devices?connectivity=offline`, `GET /api/tickets?status=open`, `GET /api/monitor`.
 
 Read tools (annotated `readOnlyHint`):
 
